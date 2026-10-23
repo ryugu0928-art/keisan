@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>レシート記録</title>
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--tx:#1d1d1b;--mut:#74726b;--ac:#0f7b6c;--acx:#fff;--bd:#e3e1da;--wa:#b4531a;--box-sizing:border-box;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161615;--card:#222221;--tx:#efeee9;--mut:#9b9990;--ac:#3fb8a5;--acx:#0b1f1b;--bd:#35342f;--wa:#e7945b}}
+:root[data-theme="dark"]{--bg:#161615;--card:#222221;--tx:#efeee9;--mut:#9b9990;--ac:#3fb8a5;--acx:#0b1f1b;--bd:#35342f;--wa:#e7945b}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
+main{max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:4px 0 12px}h2{font-size:15px;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
+.tabs{display:flex;gap:8px;margin-bottom:12px}
+.tabs button{flex:1}
+button{font:inherit;border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:10px;padding:10px 14px;cursor:pointer}
+button.p{background:var(--ac);color:var(--acx);border-color:var(--ac);font-weight:600}
+button.on{border-color:var(--ac);color:var(--ac);font-weight:600}
+button:disabled{opacity:.5}
+input{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:8px;width:100%}
+label{display:block;font-size:12px;color:var(--mut);margin:8px 0 2px}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{min-width:0}
+.it{display:grid;grid-template-columns:1fr 54px 84px 32px;gap:6px;margin-bottom:6px}
+.mut{color:var(--mut);font-size:13px}.warn{color:var(--wa);font-size:13px;margin:6px 0}
+.rec{border-top:1px solid var(--bd);padding:10px 0}.rec:first-child{border-top:0}
+.rec .h{display:flex;justify-content:space-between;gap:8px;font-weight:600}
+.rec ul{margin:6px 0 0;padding-left:18px;color:var(--mut);font-size:13px}
+.tot{font-size:22px;font-weight:700}
+img.pv{max-width:100%;max-height:220px;border-radius:8px;display:block;margin:8px 0}
+.hide{display:none}
+</style>
+</head>
+<body>
+<main>
+<h1>🧾 レシート記録</h1>
+<div class="tabs"><button id="t1" class="on">読み取り</button><button id="t2">履歴</button></div>
+
+<section id="v1">
+  <div class="card">
+    <input type="file" id="file" accept="image/*" class="hide">
+    <button class="p" id="pick" style="width:100%">📷 レシートを撮影・選択</button>
+    <img id="pv" class="pv hide" alt="">
+    <div id="msg" class="mut" style="margin-top:8px">明るい場所で、レシート全体がまっすぐ写るように撮ると精度が上がります。</div>
+  </div>
+  <div class="card hide" id="ed">
+    <h2>読み取り結果(間違いは直せます)</h2>
+    <div class="row"><div style="flex:2"><label>店名</label><input id="store"></div><div style="flex:1.2"><label>日付</label><input id="date" type="date"></div></div>
+    <label>品目(品名 / 数量 / 金額)</label>
+    <div id="items"></div>
+    <button id="add">＋ 品目を追加</button>
+    <div class="row" style="margin-top:10px"><div><label>合計金額(レシート記載)</label><input id="total" type="number" inputmode="numeric"></div></div>
+    <div id="chk" class="warn"></div>
+    <button class="p" id="save" style="width:100%;margin-top:10px">この内容で記録する</button>
+  </div>
+</section>
+
+<section id="v2" class="hide">
+  <div class="card"><div class="mut">件数 <span id="cnt">0</span> ／ 合計</div><div class="tot" id="sum">¥0</div></div>
+  <div class="card"><div id="list"></div></div>
+  <div class="row"><button id="csv" style="flex:1">CSVで保存</button><button id="clr" style="flex:1">全削除</button></div>
+</section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const yen=n=>"¥"+(Number(n)||0).toLocaleString("ja-JP");
+let recs=[];
+try{recs=JSON.parse(localStorage.getItem("receipts")||"[]")}catch(e){}
+const persist=()=>{try{localStorage.setItem("receipts",JSON.stringify(recs))}catch(e){}};
+let sample=null;
+(async()=>{try{sample=await claude.use("sample")}catch(e){}
+ if(!sample)$("msg").textContent="この環境では自動読み取りを使えません。下のフォームに手入力で記録できます。";})();
+
+function tab(n){$("v1").classList.toggle("hide",n!==1);$("v2").classList.toggle("hide",n!==2);
+ $("t1").classList.toggle("on",n===1);$("t2").classList.toggle("on",n===2);if(n===2)renderList();}
+$("t1").onclick=()=>tab(1);$("t2").onclick=()=>tab(2);
+
+function itemRow(it){
+ const d=document.createElement("div");d.className="it";
+ d.innerHTML='<input class="n" placeholder="品名"><input class="q" type="number" inputmode="numeric" placeholder="数量"><input class="pr" type="number" inputmode="numeric" placeholder="金額"><button>×</button>';
+ d.querySelector(".n").value=it.name||"";d.querySelector(".q").value=it.qty??1;d.querySelector(".pr").value=it.price??"";
+ d.querySelector("button").onclick=()=>{d.remove();check()};
+ d.oninput=check;$("items").appendChild(d);
+}
+function readItems(){return [...$("items").children].map(r=>({name:r.querySelector(".n").value.trim(),qty:+r.querySelector(".q").value||1,price:+r.querySelector(".pr").value||0})).filter(i=>i.name||i.price);}
+function check(){
+ const s=readItems().reduce((a,i)=>a+i.price,0),t=+$("total").value||0;
+ $("chk").textContent=(t&&s!==t)?`⚠ 品目の合計(${yen(s)})が合計金額(${yen(t)})と一致しません。値引き・税の行がないか、写真と見比べて確認してください。`:(t?"✓ 品目の合計と合計金額が一致しています":"");
+}
+function show(r){
+ $("ed").classList.remove("hide");$("store").value=r.store||"";$("date").value=r.date||new Date().toISOString().slice(0,10);
+ $("items").innerHTML="";(r.items||[]).forEach(itemRow);if(!(r.items||[]).length)itemRow({});
+ $("total").value=r.total??"";check();
+}
+$("add").onclick=()=>itemRow({});
+$("total").oninput=check;
+
+$("pick").onclick=()=>$("file").click();
+async function shrink(f){
+ const url=URL.createObjectURL(f);const img=await new Promise((ok,ng)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=ng;i.src=url});
+ const k=Math.min(1,2000/Math.max(img.width,img.height));const c=document.createElement("canvas");
+ c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+ return {url,blob:await new Promise(ok=>c.toBlob(ok,"image/jpeg",.9))};
+}
+$("file").onchange=async e=>{
+ const f=e.target.files[0];if(!f)return;
+ let p;try{p=await shrink(f)}catch(x){$("msg").textContent="画像を開けませんでした。別の写真で試してください。";return}
+ $("pv").src=p.url;$("pv").classList.remove("hide");
+ if(!sample){show({});return}
+ $("msg").textContent="読み取り中…";$("pick").disabled=true;
+ try{
+  const lim=await sample.limits();
+  if(!lim.images)throw {message:"画像読み取りが無効です"};
+  const prompt=`添付はレシートの写真です。印字されている内容だけを、推測せず正確に読み取り、JSONのみで返してください(前置き・コードブロック不要)。
+形式: {"store":"店名","date":"YYYY-MM-DD(読めなければ空文字)","items":[{"name":"品名","qty":数量(整数、不明なら1),"price":その行の金額(整数・円・数量を掛けた後の行合計)}],"total":レシート記載の合計金額(整数),"readable":true/false}
+ルール: 値引き・割引行は品名をそのまま入れて金額をマイナスにする。小計・税・お預かり・お釣りは品目に含めない。読めない文字を創作しない(不明なら「(判読不可)」)。金額は必ず印字の数字をそのまま使い、品目の金額合計が合計と合うか自分で検算してから答える。`;
+  const r=await sample.json(prompt,{images:[p.blob],modelTier:"complex",cache:false});
+  show(r);$("msg").textContent=r.readable===false?"画像が読みにくいため、内容を必ず確認してください。":"読み取り完了。内容を確認して記録してください。";
+ }catch(x){$("msg").textContent="自動読み取りに失敗しました("+(x&&x.message||"不明なエラー")+")。手入力で記録できます。";show({})}
+ $("pick").disabled=false;$("file").value="";
+};
+
+$("save").onclick=()=>{
+ const items=readItems(),total=+$("total").value||items.reduce((a,i)=>a+i.price,0);
+ if(!items.length&&!total){$("chk").textContent="品目か合計金額を入力してください。";return}
+ recs.unshift({id:Date.now(),store:$("store").value.trim()||"(店名なし)",date:$("date").value,items,total});
+ persist();$("ed").classList.add("hide");$("pv").classList.add("hide");$("msg").textContent="記録しました ✓ 続けて次のレシートも読み取れます。";
+};
+
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function renderList(){
+ $("cnt").textContent=recs.length;$("sum").textContent=yen(recs.reduce((a,r)=>a+r.total,0));
+ $("list").innerHTML=recs.length?recs.map(r=>`<div class="rec"><div class="h"><span>${esc(r.store)}</span><span>${yen(r.total)}</span></div><div class="mut">${esc(r.date||"")}</div><ul>${r.items.map(i=>`<li>${esc(i.name)} ×${i.qty} … ${yen(i.price)}</li>`).join("")}</ul><button data-d="${r.id}" style="margin-top:6px;padding:4px 10px;font-size:12px">削除</button></div>`).join(""):'<div class="mut">まだ記録がありません。</div>';
+ $("list").querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>{recs=recs.filter(r=>r.id!=b.dataset.d);persist();renderList()});
+}
+$("clr").onclick=()=>{if(recs.length&&confirm("すべての記録を削除しますか?")){recs=[];persist();renderList()}};
+$("csv").onclick=async()=>{
+ const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
+ const rows=[["日付","店名","品名","数量","金額","レシート合計"]];
+ recs.forEach(r=>r.items.forEach(i=>rows.push([r.date,r.store,i.name,i.qty,i.price,r.total])));
+ const data="\ufeff"+rows.map(r=>r.map(q).join(",")).join("\n");
+ try{const d=await claude.use("downloads");if(!d)throw 0;await d.save({filename:"receipts.csv",data})}catch(e){$("csv").textContent="保存できませんでした"}
+};
+</script>
+</body>
+</html>
