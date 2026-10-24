@@ -5685,7 +5685,7 @@ function step(dt){
   if(st.rampCool<=0&&st.y<=.01&&st.vy<=0&&st.v>10&&Math.abs(lat)<W/2)for(const k of RAMPS){let d=bi-k;if(d>N/2)d-=N;if(d<-N/2)d+=N;
     if(Math.abs(d)<=1){st.vy=4.5+st.v*.1;st.rampT=0;st.rampCool=1.5;st.hop=false;dr.pend=0;st.shake=Math.max(st.shake,.25);blip(420,.12);break;}}
   if(D3&&WORLD&&(WORLD.id==='wp'||WORLD.id==='sweet')&&st.rampCool<=0&&!st.fly&&st.y<=.01&&st.vy<=0&&st.v>10&&jpLipAny(st.P3)){st.vy=6.5+st.v*.1;st.rampT=0;st.rampCool=1.5;st.hop=false;dr.pend=0;st.shake=Math.max(st.shake,.25);blip(420,.12);}   // ウォーターパークのジャンプ台
-  const air=st.y>0||st.vy>0;
+  const air=st.y>0||st.vy>0||(D3&&st.fly&&!st.glide&&(st.ja||st.rampT>=0));   // 3D：ジャンプ台から飛んで車体の高さが0に戻っても、実際に接地するまでは空中扱い（着地してから加速）
   if(st.rampT>=0)st.rampT+=dt;
   /* 水中JA：ニュートラル/左右は空中でブースト発動(着地ブーストより弱い)、上下入力はトリック終了(着地)まで遅延。発動時間0.35秒・弱さ0.6倍は暫定値 */
   if(st.ja){st.jaE=(st.jaE||0)+dt;if(air&&st.jaWet&&!st.jaVert&&!st.jaWB&&st.jaE>=.35){st.jaWB=1;const J=mtTable(st.P.mt);st.mta=J.jumpAcc/J.mtAcc*.6;st.mt=Math.max(st.mt||0,J.jumpLen/60*.6);st.mtm=Math.max(st.mtm||0,1+(J.jumpSpeed-1)*.6);st.shake=.25;blip(260,.15);$t('水中JA：空中ブースト（弱）');}}
